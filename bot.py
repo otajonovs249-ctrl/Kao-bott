@@ -16,7 +16,7 @@ from aiogram.types import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "SHU_YERGA_TOKEN")
 # Bir nechta admin bo'lsa vergul bilan qo'shing: [111, 222]
-ADMIN_IDS = [123456789]
+ADMIN_IDS = [7352664827]
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
