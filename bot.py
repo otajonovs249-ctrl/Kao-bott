@@ -31,7 +31,17 @@ class Order(StatesGroup):
     address = State()
 
 
-def phone_kb():
+def phone_kb():def location_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[[
+            KeyboardButton(
+                text="📍 Manzilni yuborish",
+                request_location=True
+            )
+        ]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📞 Raqamni yuborish", request_contact=True)]],
         resize_keyboard=True,
@@ -89,15 +99,51 @@ async def get_phone(m: Message, state: FSMContext):
 @dp.message(Order.item, F.text)
 async def get_item(m: Message, state: FSMContext):
     await state.update_data(item=m.text)
-    await m.answer("Manzilingizni yozing:", reply_markup=ReplyKeyboardRemove())
+    await m.answer(
+        "📍 Manzilingizni yuborish uchun tugmani bosing:",
+        reply_markup=location_kb()
+    )
     await state.set_state(Order.address)
 
-
 @dp.message(Order.address, F.text)
+@dp.message(Order.address, F.location)
 async def get_address(m: Message, state: FSMContext):
-    data = await state.update_data(address=m.text)
+    loc = m.location
+
+    address = f"https://www.google.com/maps?q={loc.latitude},{loc.longitude}"
+
+    data = await state.update_data(address=address)
     await state.clear()
 
+    user = f"@{m.from_user.username}" if m.from_user.username else "username yo'q"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    save_order([
+        now, data["name"], data["phone"],
+        data["item"], address, user
+    ])
+
+    await m.answer(
+        "✅ Buyurtmangiz qabul qilindi!\n"
+        "Tez orada siz bilan bog'lanamiz.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    text = (
+        "🆕 Yangi buyurtma!\n\n"
+        f"👤 Ism: {data['name']}\n"
+        f"📞 Telefon: {data['phone']}\n"
+        f"🛋 Mebel: {data['item']}\n"
+        f"📍 Manzil: {address}\n"
+        f"🔗 Telegram: {user}\n"
+        f"🕒 {now}"
+    )
+
+    for admin in ADMIN_IDS:
+        try:
+            await bot.send_message(admin, text)
+        except Exception as e:
+            print(f"Xatolik: {e}")
     user = f"@{m.from_user.username}" if m.from_user.username else "username yo'q"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
