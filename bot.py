@@ -49,10 +49,27 @@ def phone_kb():def location_kb():
     )
 
 
-def items_kb():
-    rows = [ITEMS[i:i + 2] for i in range(0, len(ITEMS), 2)]
+def phone_kb():
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=t) for t in r] for r in rows],
+        keyboard=[[
+            KeyboardButton(
+                text="📞 Raqamni yuborish",
+                request_contact=True
+            )
+        ]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def location_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[[
+            KeyboardButton(
+                text="📍 Manzilni yuborish",
+                request_location=True
+            )
+        ]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
