@@ -1,214 +1,154 @@
-import asyncio
-import csv
 import os
-from datetime import datetime
+import json
+import csv
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import CommandStart
 from aiogram.types import (
-    KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
+    KeyboardButton,
+    WebAppInfo
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
+
 ADMIN_IDS = [7352664827]
 
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN topilmadi!")
+if not BOT_TOKEN or not WEBAPP_URL:
+    raise ValueError("BOT_TOKEN yoki WEBAPP_URL kiritilmagan!")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-ITEMS = ["Divan", "Shkaf", "Oshxona", "Krovat", "Stol-stul", "Boshqa"]
+orders = {}
 
 
-class Order(StatesGroup):
-    name = State()
-    phone = State()
-    item = State()
-    address = State()
-
-
-def phone_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[[
-            KeyboardButton(
-                text="📞 Raqamni yuborish",
-                request_contact=True
-            )
-        ]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
-def location_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[[
-            KeyboardButton(
-                text="📍 Manzilni yuborish",
-                request_location=True
-            )
-        ]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
-def items_kb():
-    rows = [ITEMS[i:i + 2] for i in range(0, len(ITEMS), 2)]
-
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=t) for t in row]
-            for row in rows
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
-def save_order(row):
-    new = not os.path.exists("orders.csv")
-
-    with open("orders.csv", "a", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-
-        if new:
-            writer.writerow([
-                "Vaqt", "Ism", "Telefon",
-                "Mebel", "Manzil", "Telegram"
-            ])
-
-        writer.writerow(row)
-
-
+# ASOSIY MENYU
 @dp.message(CommandStart())
-async def start(m: Message, state: FSMContext):
-    await state.clear()
-
-    await m.answer(
-        "Assalomu alaykum! KAO MEBEL ga xush kelibsiz! 🛋\n\n"
-        "Buyurtma berish uchun ismingizni yozing:",
-        reply_markup=ReplyKeyboardRemove()
+async def start(message: Message):
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text="🛋 Buyurtma berish",
+                    web_app=WebAppInfo(url=WEBAPP_URL)
+                )
+            ],
+            [KeyboardButton(text="📞 Bog‘lanish")]
+        ],
+        resize_keyboard=True
     )
 
-    await state.set_state(Order.name)
-
-
-@dp.message(Order.name, F.text)
-async def get_name(m: Message, state: FSMContext):
-    await state.update_data(name=m.text)
-
-    await m.answer(
-        "📞 Telefon raqamingizni yuboring:",
-        reply_markup=phone_kb()
+    await message.answer(
+        "🏠 KAO MEBEL rasmiy botiga xush kelibsiz!\n\n"
+        "Bu yerda mebel buyurtma qilishingiz mumkin.",
+        reply_markup=keyboard
     )
 
-    await state.set_state(Order.phone)
 
-
-@dp.message(Order.phone, F.contact | F.text)
-async def get_phone(m: Message, state: FSMContext):
-    phone = m.contact.phone_number if m.contact else m.text
-
-    await state.update_data(phone=phone)
-
-    await m.answer(
-        "🛋 Qanday mebel kerak? Tanlang:",
-        reply_markup=items_kb()
+# BOG‘LANISH
+@dp.message(F.text == "📞 Bog‘lanish")
+async def contact(message: Message):
+    await message.answer(
+        "📞 KAO MEBEL\n"
+        "Buyurtma berish uchun «🛋 Buyurtma berish» tugmasini bosing."
     )
 
-    await state.set_state(Order.item)
+
+# MINI APP'DAN KELGAN BUYURTMA
+@dp.message(F.web_app_data)
+async def get_order(message: Message):
+    try:
+        data = json.loads(message.web_app_data.data)
+
+        if data.get("type") != "order":
+            await message.answer("❌ Buyurtma ma’lumotlari noto‘g‘ri.")
+            return
+
+        name = str(data.get("name", ""))[:100]
+        phone = str(data.get("phone", ""))[:30]
+        items = data.get("items", [])
+
+        if not name or not phone or not isinstance(items, list):
+            await message.answer("❌ Ma’lumotlarni qayta tekshiring.")
+            return
+
+        order_id = message.from_user.id
+
+        orders[order_id] = {
+            "name": name,
+            "phone": phone,
+            "items": items
+        }
+
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[[
+                KeyboardButton(
+                    text="📍 Joylashuvni yuborish",
+                    request_location=True
+                )
+            ]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+
+        await message.answer(
+            "✅ Buyurtmangiz qabul qilindi!\n\n"
+            "📍 Endi yetkazib berish manzilingizni yuboring.",
+            reply_markup=keyboard
+        )
+
+    except Exception:
+        await message.answer(
+            "❌ Xatolik yuz berdi. Iltimos, qayta urinib ko‘ring."
+        )
 
 
-@dp.message(Order.item, F.text)
-async def get_item(m: Message, state: FSMContext):
-    await state.update_data(item=m.text)
+# MIJOZ JOYLASHUVINI YUBORADI
+@dp.message(F.location)
+async def get_location(message: Message):
+    user_id = message.from_user.id
 
-    await m.answer(
-        "📍 Endi manzilingizni yuboring.\n"
-        "Quyidagi tugmani bosing:",
-        reply_markup=location_kb()
+    if user_id not in orders:
+        await message.answer("Avval buyurtma berishingiz kerak.")
+        return
+
+    order = orders.pop(user_id)
+
+    order_text = (
+        "🛍 YANGI BUYURTMA — KAO MEBEL\n\n"
+        f"👤 Ism: {order['name']}\n"
+        f"📞 Telefon: {order['phone']}\n"
+        f"🛋 Mahsulotlar: {json.dumps(order['items'], ensure_ascii=False)}\n"
+        f"🆔 Telegram ID: {user_id}\n\n"
+        "📍 Mijoz joylashuvi quyida:"
     )
 
-    await state.set_state(Order.address)
-
-
-@dp.message(Order.address, F.location)
-async def get_address(m: Message, state: FSMContext):
-    loc = m.location
-
-    address = (
-        f"https://www.google.com/maps?q="
-        f"{loc.latitude},{loc.longitude}"
-    )
-
-    data = await state.update_data(address=address)
-    await state.clear()
-
-    user = (
-        f"@{m.from_user.username}"
-        if m.from_user.username
-        else "username yo'q"
-    )
-
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    save_order([
-        now,
-        data["name"],
-        data["phone"],
-        data["item"],
-        address,
-        user
-    ])
-
-    await m.answer(
-        "✅ Buyurtmangiz muvaffaqiyatli qabul qilindi!\n\n"
-        "KAO MEBEL xizmatini tanlaganingiz uchun rahmat! 🛋\n"
-        "Tez orada siz bilan bog'lanamiz.",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-    text = (
-        "🆕 YANGI BUYURTMA!\n\n"
-        f"👤 Ism: {data['name']}\n"
-        f"📞 Telefon: {data['phone']}\n"
-        f"🛋 Mebel: {data['item']}\n"
-        f"📍 Manzil: {address}\n"
-        f"🔗 Telegram: {user}\n"
-        f"🕒 Vaqt: {now}"
-    )
-
-    for admin in ADMIN_IDS:
+    for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(admin, text)
-
+            await bot.send_message(admin_id, order_text)
             await bot.send_location(
-                admin,
-                latitude=loc.latitude,
-                longitude=loc.longitude
+                admin_id,
+                latitude=message.location.latitude,
+                longitude=message.location.longitude
             )
+        except Exception as error:
+            print("Admin xabari yuborilmadi:", error)
 
-        except Exception as e:
-            print(f"Admin xatosi: {e}")
+    await message.answer(
+        "🎉 Rahmat! Buyurtmangiz yuborildi.\n"
+        "Tez orada siz bilan bog‘lanamiz."
+    )
 
 
-@dp.message(StateFilter(None))
-async def greet(m: Message, state: FSMContext):
-    await start(m, state)
-
-
+# BOTNI ISHGA TUSHIRISH
 async def main():
-    print("KAO MEBEL BOT ISHGA TUSHDI!")
-
+    print("KAO MEBEL bot ishga tushdi!")
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
